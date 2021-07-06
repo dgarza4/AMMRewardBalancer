@@ -10,15 +10,18 @@ contract ShyftBALV2LPStaking is Ownable {
   using SafeMath  for uint256;
 
   uint256 public secondsAWeek = 7 * 24 * 60 * 60; // Seconds for a week
+  uint256 public startDate; // Start date - Unix timestamp - ex: 1625596114
   IERC20  public shyftToken; // Shyft token
 
   struct PoolData {
     IERC20 lpToken;
     uint256 numShyftPerWeek;
+    uint256 lastClaimDate;
+    uint256 shyftPerStock;
   }
   struct UserData {
     uint256 lpAmount;
-    uint256 lastClaimDate;
+    uint256 preReward;
   }
   
   PoolData[] public poolData;
@@ -37,19 +40,25 @@ contract ShyftBALV2LPStaking is Ownable {
   );
 
   constructor(
-    IERC20 _shyftToken
+    IERC20 _shyftToken,
+    uint256 _startDate
   ) {
     shyftToken = _shyftToken;
+    startDate  = _startDate;
   }
   
   // Add a new Balancer Pool
   function addPool(
     IERC20 _balLPToken, 
-    uint256 _numShyftPerWeek
+    uint256 _numShyftPerWeek,
+    uint256 _currentDate
   ) public onlyOwner {
+    uint256 lastRewardDate = _currentDate > startDate ? _currentDate : startDate;
     poolData.push(PoolData({
       lpToken: _balLPToken,
-      numShyftPerWeek: _numShyftPerWeek
+      numShyftPerWeek: _numShyftPerWeek,
+      lastClaimDate: lastRewardDate,
+      shyftPerStock: 0 
     }));
   }
   
@@ -67,22 +76,38 @@ contract ShyftBALV2LPStaking is Ownable {
     uint256 _balPoolId,
     uint256 _currentDate
   ) public view returns (uint256 pendingAmount) {
+    PoolData storage pool = poolData[_balPoolId];
     UserData storage user = userData[_balPoolId][msg.sender];
-    if (user.lpAmount > 0 && user.lastClaimDate > 0) {
-      pendingAmount = claimCalculation(_balPoolId, _currentDate).div(1e18);
+
+    uint256 shyftPerStock = pool.shyftPerStock;
+    uint256 totalPoolLP = getTotalPoolLP(_balPoolId);
+
+    if (user.lpAmount > 0 && totalPoolLP > 0 && _currentDate > pool.lastClaimDate) {
+      uint256 diffDate = _currentDate.sub(pool.lastClaimDate);
+      uint256 totalReward = diffDate.div(secondsAWeek).mul(pool.numShyftPerWeek);
+      shyftPerStock = shyftPerStock.add(totalReward.mul(1e18).div(totalPoolLP));
     }
+
+    pendingAmount = user.lpAmount.mul(shyftPerStock).div(1e18).sub(user.preReward);
   }
   
   // Claim reward for a user
   function claim(
     uint256 _balPoolId,
     uint256 _currentDate
-  ) external {
+  ) external returns (uint256) {
+    PoolData storage pool = poolData[_balPoolId];
     UserData storage user = userData[_balPoolId][msg.sender];
-    if (user.lpAmount > 0 && user.lastClaimDate > 0) {
-      uint256 claimAmount = claimCalculation(_balPoolId, _currentDate);
-      shyftToken.safeTransferFrom(address(this), address(msg.sender), claimAmount.div(1e18));
+
+    readyPool(_balPoolId, _currentDate);
+
+    if (user.lpAmount > 0) {
+      uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
+      shyftToken.safeTransferFrom(address(this), address(msg.sender), claimAmount);
+
+      return claimAmount;
     }
+    return 0;
   }
 
   // Deposit Balancer LP token
@@ -94,13 +119,15 @@ contract ShyftBALV2LPStaking is Ownable {
     PoolData storage pool = poolData[_balPoolId];
     UserData storage user = userData[_balPoolId][msg.sender];
 
-    if (user.lpAmount > 0 && user.lastClaimDate > 0) {
-      uint256 claimAmount = claimCalculation(_balPoolId, _currentDate);
-      shyftToken.safeTransferFrom(address(this), address(msg.sender), claimAmount.div(1e18));
+    readyPool(_balPoolId, _currentDate);
+
+    if (user.lpAmount > 0) {
+      uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
+      shyftToken.safeTransferFrom(address(this), address(msg.sender), claimAmount);
     }
     
     user.lpAmount = user.lpAmount.add(_amount);
-    user.lastClaimDate = _currentDate;
+    user.preReward = user.lpAmount.mul(pool.shyftPerStock).div(1e18);    
     pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
 
     emit Deposited(msg.sender, _balPoolId, _amount);
@@ -114,34 +141,38 @@ contract ShyftBALV2LPStaking is Ownable {
   ) external {
     PoolData storage pool = poolData[_balPoolId];
     UserData storage user = userData[_balPoolId][msg.sender];
+
     require(user.lpAmount >= _amount, 'Insufficient amount');
 
-    if (user.lpAmount > 0 && user.lastClaimDate > 0) {
-      uint256 claimAmount = claimCalculation(_balPoolId, _currentDate);
-      shyftToken.safeTransferFrom(address(this), address(msg.sender), claimAmount.div(1e18));
-    }
+    readyPool(_balPoolId, _currentDate);
+    
+    uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
+    shyftToken.safeTransferFrom(address(this), address(msg.sender), claimAmount);
 
     user.lpAmount = user.lpAmount.sub(_amount);
-    user.lastClaimDate = _currentDate;
+    user.preReward = user.lpAmount.mul(pool.shyftPerStock).div(1e18);
     pool.lpToken.safeTransferFrom(address(this), address(msg.sender), _amount);
 
     emit Withdrew(msg.sender, _balPoolId, _amount);
   }
 
-  // Calculate the claim amount shyft
-  function claimCalculation(
+  // Calculate the shyft amount per stock before performing transactioin
+  function readyPool(
     uint256 _balPoolId,
     uint256 _currentDate
-  ) private view returns (uint256 claimAmount) {
+  ) private {
     PoolData storage pool = poolData[_balPoolId];
-    UserData storage user = userData[_balPoolId][msg.sender];
+
+    if (_currentDate < pool.lastClaimDate)
+      return;
     
-    uint256 totalPoolLP = pool.lpToken.balanceOf(address(this));
-    if (totalPoolLP != 0) {
-      uint256 diffDate = _currentDate.sub(user.lastClaimDate);
-      uint256 sharePerWeek = diffDate.div(secondsAWeek);
-      claimAmount = pool.numShyftPerWeek.mul(user.lpAmount).mul(sharePerWeek).mul(1e18).div(totalPoolLP);
-    }
+    uint256 totalPoolLP = getTotalPoolLP(_balPoolId);
+
+    uint256 diffDate = _currentDate.sub(pool.lastClaimDate);
+    uint256 totalReward = diffDate.div(secondsAWeek).mul(pool.numShyftPerWeek);
+
+    pool.shyftPerStock = pool.shyftPerStock.add(totalReward.mul(1e18).div(totalPoolLP));
+    pool.lastClaimDate = _currentDate;
   }
 
   // Get pools length
@@ -152,7 +183,7 @@ contract ShyftBALV2LPStaking is Ownable {
   // Get total pool lp for a specific balancer pool
   function getTotalPoolLP(
     uint256 _balPoolId
-  ) external view returns (uint256 totalPoolLP) {
+  ) public view returns (uint256 totalPoolLP) {
     PoolData storage pool = poolData[_balPoolId];
     totalPoolLP = pool.lpToken.balanceOf(address(this));
   }
