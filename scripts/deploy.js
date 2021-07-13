@@ -2,7 +2,7 @@ const hh = require("hardhat")
 
 async function main() {
   const ShyftBALV2LPStaking = await hh.ethers.getContractFactory("ShyftBALV2LPStaking")
-  const BALV2Staking = await ShyftBALV2LPStaking.deploy("0xcba3eae7f55d0f423af43cc85e67ab0fbf87b61c")
+  const BALV2Staking = await ShyftBALV2LPStaking.deploy("0xcba3eae7f55d0f423af43cc85e67ab0fbf87b61c", 1625776020)
 
   console.log("ShyftBALV2LPStaking was deployed to :: ", BALV2Staking.address, " successfully.");
 }

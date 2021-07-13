@@ -70,6 +70,16 @@ contract ShyftBALV2LPStaking is Ownable {
     PoolData storage pool = poolData[_balPoolId];
     pool.numShyftPerWeek = _numShyftPerWeek;
   }
+
+  // Fund reward token
+  function preFund(
+    uint256 _amount
+  ) public {
+    require(msg.sender != address(0), "Require valid address");
+    require(_amount > 0, "Require positive value");
+    require(shyftToken.balanceOf(msg.sender) >= _amount, "Require enough amount of reward token");
+    shyftToken.transferFrom(msg.sender, address(this), _amount);
+  }
   
   // Get pending reward for a user
   function pendingReward(
@@ -80,12 +90,12 @@ contract ShyftBALV2LPStaking is Ownable {
     UserData storage user = userData[_balPoolId][msg.sender];
 
     uint256 shyftPerStock = pool.shyftPerStock;
-    uint256 totalPoolLP = getTotalPoolLP(_balPoolId);
+    uint256 totalPoolLP = pool.lpToken.balanceOf(address(this));
 
     if (user.lpAmount > 0 && totalPoolLP > 0 && _currentDate > pool.lastClaimDate) {
-      uint256 diffDate = _currentDate.sub(pool.lastClaimDate);
-      uint256 totalReward = diffDate.div(secondsAWeek).mul(pool.numShyftPerWeek);
-      shyftPerStock = shyftPerStock.add(totalReward.mul(1e18).div(totalPoolLP));
+      uint256 diffDate = getDiffDate(_currentDate, pool.lastClaimDate);
+      uint256 totalReward = diffDate.mul(1e18).div(secondsAWeek).mul(pool.numShyftPerWeek);
+      shyftPerStock = shyftPerStock.add(totalReward.div(totalPoolLP));
     }
 
     pendingAmount = user.lpAmount.mul(shyftPerStock).div(1e18).sub(user.preReward);
@@ -103,7 +113,7 @@ contract ShyftBALV2LPStaking is Ownable {
 
     if (user.lpAmount > 0) {
       uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-      shyftToken.safeTransferFrom(address(this), address(msg.sender), claimAmount);
+      safeRewardTransfer(msg.sender, claimAmount);
 
       return claimAmount;
     }
@@ -115,7 +125,7 @@ contract ShyftBALV2LPStaking is Ownable {
     uint256 _balPoolId, 
     uint256 _amount,
     uint256 _currentDate
-  ) external {
+  ) public {
     PoolData storage pool = poolData[_balPoolId];
     UserData storage user = userData[_balPoolId][msg.sender];
 
@@ -123,11 +133,11 @@ contract ShyftBALV2LPStaking is Ownable {
 
     if (user.lpAmount > 0) {
       uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-      shyftToken.safeTransferFrom(address(this), address(msg.sender), claimAmount);
+      safeRewardTransfer(msg.sender, claimAmount);
     }
     
     user.lpAmount = user.lpAmount.add(_amount);
-    user.preReward = user.lpAmount.mul(pool.shyftPerStock).div(1e18);    
+    user.preReward = user.lpAmount.mul(pool.shyftPerStock).div(1e18);
     pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
 
     emit Deposited(msg.sender, _balPoolId, _amount);
@@ -138,7 +148,7 @@ contract ShyftBALV2LPStaking is Ownable {
     uint256 _balPoolId,
     uint256 _amount,
     uint256 _currentDate
-  ) external {
+  ) public {
     PoolData storage pool = poolData[_balPoolId];
     UserData storage user = userData[_balPoolId][msg.sender];
 
@@ -147,7 +157,7 @@ contract ShyftBALV2LPStaking is Ownable {
     readyPool(_balPoolId, _currentDate);
     
     uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-    shyftToken.safeTransferFrom(address(this), address(msg.sender), claimAmount);
+    safeRewardTransfer(msg.sender, claimAmount);
 
     user.lpAmount = user.lpAmount.sub(_amount);
     user.preReward = user.lpAmount.mul(pool.shyftPerStock).div(1e18);
@@ -160,19 +170,43 @@ contract ShyftBALV2LPStaking is Ownable {
   function readyPool(
     uint256 _balPoolId,
     uint256 _currentDate
-  ) private {
+  ) public {
     PoolData storage pool = poolData[_balPoolId];
 
-    if (_currentDate < pool.lastClaimDate)
+    if (_currentDate < pool.lastClaimDate) {
       return;
+    }
     
-    uint256 totalPoolLP = getTotalPoolLP(_balPoolId);
+    uint256 totalPoolLP = pool.lpToken.balanceOf(address(this));
+    if (totalPoolLP == 0) {
+      pool.lastClaimDate = _currentDate;
+      return;
+    }
 
-    uint256 diffDate = _currentDate.sub(pool.lastClaimDate);
-    uint256 totalReward = diffDate.div(secondsAWeek).mul(pool.numShyftPerWeek);
+    uint256 diffDate = getDiffDate(_currentDate, pool.lastClaimDate);
+    uint256 totalReward = diffDate.mul(1e18).div(secondsAWeek).mul(pool.numShyftPerWeek);
 
-    pool.shyftPerStock = pool.shyftPerStock.add(totalReward.mul(1e18).div(totalPoolLP));
+    pool.shyftPerStock = pool.shyftPerStock.add(totalReward.div(totalPoolLP));
     pool.lastClaimDate = _currentDate;
+  }
+  
+  // Get different date between 2 dates
+  function getDiffDate(uint256 _from, uint256 _to) internal pure returns(uint256 diffDate) {
+    return _from.sub(_to);
+  }
+
+  // Transfer reward
+  function safeRewardTransfer(
+    address _to, 
+    uint256 _amount
+  ) internal {
+    uint256 rewardTokenVal = shyftToken.balanceOf(address(this));
+    
+    if (_amount > rewardTokenVal) {
+      shyftToken.transfer(_to, rewardTokenVal);
+    } else {
+      shyftToken.transfer(_to, _amount);
+    }
   }
 
   // Get pools length
@@ -183,7 +217,7 @@ contract ShyftBALV2LPStaking is Ownable {
   // Get total pool lp for a specific balancer pool
   function getTotalPoolLP(
     uint256 _balPoolId
-  ) public view returns (uint256 totalPoolLP) {
+  ) external view returns (uint256 totalPoolLP) {
     PoolData storage pool = poolData[_balPoolId];
     totalPoolLP = pool.lpToken.balanceOf(address(this));
   }
