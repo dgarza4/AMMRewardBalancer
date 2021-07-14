@@ -15,6 +15,7 @@ contract ShyftBALV2LPStaking is Ownable {
 
   struct PoolData {
     IERC20 lpToken;
+    IERC20 rewardToken;
     uint256 numShyftPerWeek;
     uint256 lastClaimDate;
     uint256 shyftPerStock;
@@ -50,12 +51,14 @@ contract ShyftBALV2LPStaking is Ownable {
   // Add a new Balancer Pool
   function addPool(
     IERC20 _balLPToken, 
+    IERC20 _rewardToken,
     uint256 _numShyftPerWeek,
     uint256 _currentDate
   ) public onlyOwner {
     uint256 lastRewardDate = _currentDate > startDate ? _currentDate : startDate;
     poolData.push(PoolData({
       lpToken: _balLPToken,
+      rewardToken: _rewardToken,
       numShyftPerWeek: _numShyftPerWeek,
       lastClaimDate: lastRewardDate,
       shyftPerStock: 0 
@@ -70,15 +73,25 @@ contract ShyftBALV2LPStaking is Ownable {
     PoolData storage pool = poolData[_balPoolId];
     pool.numShyftPerWeek = _numShyftPerWeek;
   }
+  
+  // Change rewardToken for a sepcific Balancer Pool
+  function changeRewardToken(
+    uint256 _balPoolId,
+    IERC20 _rewardToken
+  ) public onlyOwner {
+    PoolData storage pool = poolData[_balPoolId];
+    pool.rewardToken = _rewardToken;
+  }
 
   // Fund reward token
   function preFund(
+    IERC20 _rewardToken, 
     uint256 _amount
   ) public {
     require(msg.sender != address(0), "Require valid address");
     require(_amount > 0, "Require positive value");
-    require(shyftToken.balanceOf(msg.sender) >= _amount, "Require enough amount of reward token");
-    shyftToken.transferFrom(msg.sender, address(this), _amount);
+    require(_rewardToken.balanceOf(msg.sender) >= _amount, "Require enough amount of reward token");
+    _rewardToken.transferFrom(msg.sender, address(this), _amount);
   }
   
   // Get pending reward for a user
@@ -113,7 +126,7 @@ contract ShyftBALV2LPStaking is Ownable {
 
     if (user.lpAmount > 0) {
       uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-      safeRewardTransfer(msg.sender, claimAmount);
+      safeRewardTransfer(msg.sender, _balPoolId, claimAmount);
 
       return claimAmount;
     }
@@ -133,7 +146,7 @@ contract ShyftBALV2LPStaking is Ownable {
 
     if (user.lpAmount > 0) {
       uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-      safeRewardTransfer(msg.sender, claimAmount);
+      safeRewardTransfer(msg.sender, _balPoolId, claimAmount);
     }
     
     user.lpAmount = user.lpAmount.add(_amount);
@@ -157,7 +170,7 @@ contract ShyftBALV2LPStaking is Ownable {
     readyPool(_balPoolId, _currentDate);
     
     uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-    safeRewardTransfer(msg.sender, claimAmount);
+    safeRewardTransfer(msg.sender, _balPoolId, claimAmount);
 
     user.lpAmount = user.lpAmount.sub(_amount);
     user.preReward = user.lpAmount.mul(pool.shyftPerStock).div(1e18);
@@ -198,14 +211,16 @@ contract ShyftBALV2LPStaking is Ownable {
   // Transfer reward
   function safeRewardTransfer(
     address _to, 
+    uint256 _balPoolId,
     uint256 _amount
   ) internal {
-    uint256 rewardTokenVal = shyftToken.balanceOf(address(this));
+    PoolData memory pool = poolData[_balPoolId];
+    uint256 rewardTokenVal = pool.rewardToken.balanceOf(address(this));
     
     if (_amount > rewardTokenVal) {
-      shyftToken.transfer(_to, rewardTokenVal);
+      pool.rewardToken.transfer(_to, rewardTokenVal);
     } else {
-      shyftToken.transfer(_to, _amount);
+      pool.rewardToken.transfer(_to, _amount);
     }
   }
 

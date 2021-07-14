@@ -21,7 +21,7 @@ import { TypedEventFilter, TypedEvent, TypedListener } from "./commons";
 
 interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
   functions: {
-    "addPool(address,uint256,uint256)": FunctionFragment;
+    "addPool(address,address,uint256,uint256)": FunctionFragment;
     "changeNumShyftPerWeek(uint256,uint256)": FunctionFragment;
     "claim(uint256,uint256)": FunctionFragment;
     "deposit(uint256,uint256,uint256)": FunctionFragment;
@@ -30,7 +30,7 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
     "owner()": FunctionFragment;
     "pendingReward(uint256,uint256)": FunctionFragment;
     "poolData(uint256)": FunctionFragment;
-    "preFund(uint256)": FunctionFragment;
+    "preFund(address,uint256)": FunctionFragment;
     "readyPool(uint256,uint256)": FunctionFragment;
     "renounceOwnership()": FunctionFragment;
     "secondsAWeek()": FunctionFragment;
@@ -43,7 +43,7 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
 
   encodeFunctionData(
     functionFragment: "addPool",
-    values: [string, BigNumberish, BigNumberish]
+    values: [string, string, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "changeNumShyftPerWeek",
@@ -76,7 +76,7 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "preFund",
-    values: [BigNumberish]
+    values: [string, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "readyPool",
@@ -205,6 +205,7 @@ export class ShyftBALV2LPStaking extends BaseContract {
   functions: {
     addPool(
       _balLPToken: string,
+      _rewardToken: string,
       _numShyftPerWeek: BigNumberish,
       _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
@@ -250,8 +251,9 @@ export class ShyftBALV2LPStaking extends BaseContract {
       arg0: BigNumberish,
       overrides?: CallOverrides
     ): Promise<
-      [string, BigNumber, BigNumber, BigNumber] & {
+      [string, string, BigNumber, BigNumber, BigNumber] & {
         lpToken: string;
+        rewardToken: string;
         numShyftPerWeek: BigNumber;
         lastClaimDate: BigNumber;
         shyftPerStock: BigNumber;
@@ -259,6 +261,7 @@ export class ShyftBALV2LPStaking extends BaseContract {
     >;
 
     preFund(
+      _rewardToken: string,
       _amount: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<ContractTransaction>;
@@ -302,6 +305,7 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
   addPool(
     _balLPToken: string,
+    _rewardToken: string,
     _numShyftPerWeek: BigNumberish,
     _currentDate: BigNumberish,
     overrides?: Overrides & { from?: string | Promise<string> }
@@ -345,8 +349,9 @@ export class ShyftBALV2LPStaking extends BaseContract {
     arg0: BigNumberish,
     overrides?: CallOverrides
   ): Promise<
-    [string, BigNumber, BigNumber, BigNumber] & {
+    [string, string, BigNumber, BigNumber, BigNumber] & {
       lpToken: string;
+      rewardToken: string;
       numShyftPerWeek: BigNumber;
       lastClaimDate: BigNumber;
       shyftPerStock: BigNumber;
@@ -354,6 +359,7 @@ export class ShyftBALV2LPStaking extends BaseContract {
   >;
 
   preFund(
+    _rewardToken: string,
     _amount: BigNumberish,
     overrides?: Overrides & { from?: string | Promise<string> }
   ): Promise<ContractTransaction>;
@@ -397,6 +403,7 @@ export class ShyftBALV2LPStaking extends BaseContract {
   callStatic: {
     addPool(
       _balLPToken: string,
+      _rewardToken: string,
       _numShyftPerWeek: BigNumberish,
       _currentDate: BigNumberish,
       overrides?: CallOverrides
@@ -440,15 +447,20 @@ export class ShyftBALV2LPStaking extends BaseContract {
       arg0: BigNumberish,
       overrides?: CallOverrides
     ): Promise<
-      [string, BigNumber, BigNumber, BigNumber] & {
+      [string, string, BigNumber, BigNumber, BigNumber] & {
         lpToken: string;
+        rewardToken: string;
         numShyftPerWeek: BigNumber;
         lastClaimDate: BigNumber;
         shyftPerStock: BigNumber;
       }
     >;
 
-    preFund(_amount: BigNumberish, overrides?: CallOverrides): Promise<void>;
+    preFund(
+      _rewardToken: string,
+      _amount: BigNumberish,
+      overrides?: CallOverrides
+    ): Promise<void>;
 
     readyPool(
       _balPoolId: BigNumberish,
@@ -516,6 +528,7 @@ export class ShyftBALV2LPStaking extends BaseContract {
   estimateGas: {
     addPool(
       _balLPToken: string,
+      _rewardToken: string,
       _numShyftPerWeek: BigNumberish,
       _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
@@ -558,6 +571,7 @@ export class ShyftBALV2LPStaking extends BaseContract {
     poolData(arg0: BigNumberish, overrides?: CallOverrides): Promise<BigNumber>;
 
     preFund(
+      _rewardToken: string,
       _amount: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<BigNumber>;
@@ -600,6 +614,7 @@ export class ShyftBALV2LPStaking extends BaseContract {
   populateTransaction: {
     addPool(
       _balLPToken: string,
+      _rewardToken: string,
       _numShyftPerWeek: BigNumberish,
       _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
@@ -645,6 +660,7 @@ export class ShyftBALV2LPStaking extends BaseContract {
     ): Promise<PopulatedTransaction>;
 
     preFund(
+      _rewardToken: string,
       _amount: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<PopulatedTransaction>;
