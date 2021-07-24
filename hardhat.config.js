@@ -19,6 +19,10 @@ module.exports = {
         evmVersion: "byzantium",
       },
     },
+    mainnet: {
+      url: `https://eth-mainnet.alchemyapi.io/v2/${process.env.ALCHEMY_API_KEY}`,
+      accounts: [`0x${process.env.PRIVATE_KEY}`],
+    },
     kovan: {
       url: `https://eth-kovan.alchemyapi.io/v2/${process.env.ALCHEMY_API_KEY}`,
       accounts: [`0x${process.env.PRIVATE_KEY}`],
@@ -32,7 +36,14 @@ module.exports = {
     apiKey: process.env.ETHERSCAN_API_KEY,
   },
   solidity: {
-    version: "0.8.0",
+    compilers: [
+      {
+        version: "0.8.0",
+      },
+      {
+        version: "0.6.0",
+      }
+    ]
   },
   paths: {
     sources: "./contracts",
