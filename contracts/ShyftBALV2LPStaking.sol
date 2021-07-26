@@ -21,50 +21,44 @@ contract ShyftBALV2LPStaking is Ownable {
   using SafeERC20 for IERC20;
   using SafeMath  for uint256;
 
-  uint256 public secondsAWeek = 7 * 24 * 60 * 60; // Seconds for a week
+  uint256 public secondsAWeek = 1 weeks; // Seconds for a week
   uint256 public startDate; // Start date - Unix timestamp - ex: 1625596114
   IERC20  public shyftToken; // Shyft token
+  uint256 public constant PERIOD = 1 minutes; // 10 minutes
 
   address public immutable factory = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
 
   // mainnet
   // address public immutable daiToken = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
-  // address public immutable wEthToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
 
   // kovan testnet
   address public immutable daiToken = 0x4F96Fe3b7A6Cf9725f59d353F723c1bDb64CA6Aa;
-  address public immutable wEthToken = 0xdFCeA9088c8A88A76FF74892C1457C17dfeef9C1;
-  address public immutable wEth9Token = 0xd0A1E359811322d97991E03f863a0C30C2cF029C;
 
-  // the desired amount of time over which the moving average should be computed, e.g. 10 mins
-  uint256 public immutable windowSize;
+  // rinkeby testnet
+  // address public immutable daiToken = 0xc7AD46e0b8a400Bb3C915120d284AafbA8fc4735;
 
-  // the number of observations stored for each pair, i.e. how many price observations are stored for the window.
-  // as granularity increases from 1, more frequent updates are needed, but moving averages become more precise.
-  // averages are computed over intervals with sizes in the range:
-  //   [windowSize - (windowSize / granularity) * 2, windowSize]
-  // e.g. if the window size is 10 mins, and the granularity is 10, the oracle will return the average price for
-  //   the period:
-  //   [now - [8 mins, 10 mins], now]
-  uint8 public immutable granularity;
 
-  // this is redundant with granularity and windowSize, but stored for gas savings & informational purposes.
-  uint256 public immutable periodSize;
+  // Chainlink DAI Proxy
+  // address public immutable daiProxy = 	0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9; // mainnet
+  address public immutable daiProxy = 0x777A68032a88E5A84678A77Af2CD65A7b3c0775a; // kovan
+  // address public immutable daiProxy = 0x2bA49Aaa16E6afD2a993473cfB70Fa8559B523cF; // rinkeby
+
 
   struct Observation {
-    uint256 timestamp;
-    uint256 price0Cumulative;
-    uint256 price1Cumulative;
+    uint32 timestampLast;
+    uint256 price0CumulativeLast;
+    uint256 price1CumulativeLast;
+    uint256 price0;
+    uint256 price1;
   }
   struct BalancePair {
     uint256 balanceA;
     uint256 balanceB;
-    uint256 balPoolId;
   }
 
   struct PoolData {
     IERC20 lpToken;
-    IERC20 rewardToken;
+    // IERC20 rewardToken;
     uint256 numShyftPerWeek;
     uint256 lastClaimDate;
     uint256 shyftPerStock;
@@ -76,7 +70,7 @@ contract ShyftBALV2LPStaking is Ownable {
   
   PoolData[] public poolData;
   mapping (uint256 => mapping (address => UserData)) public userData;
-  mapping (address => Observation[]) public pairObservations;
+  mapping (address => Observation) public pairObservation;
 
   event Deposited(
     address indexed _from,
@@ -92,33 +86,23 @@ contract ShyftBALV2LPStaking is Ownable {
 
   constructor(
     IERC20 _shyftToken,
-    uint256 _startDate,
-    uint256 _windowSize, 
-    uint8 _granularity
+    uint256 _startDate
   ) {
     shyftToken = _shyftToken;
     startDate  = _startDate;
-
-    require(_granularity > 1, 'SlidingWindowOracle: GRANULARITY');
-    require(
-      (periodSize = _windowSize / _granularity) * _granularity == _windowSize,
-      'SlidingWindowOracle: WINDOW_NOT_EVENLY_DIVISIBLE'
-    );
-    windowSize = _windowSize;
-    granularity = _granularity;
   }
   
   // Add a new Balancer Pool
   function addPool(
     IERC20 _balLPToken, 
-    IERC20 _rewardToken,
+    // IERC20 _rewardToken,
     uint256 _numShyftPerWeek,
     uint256 _currentDate
   ) public onlyOwner {
     uint256 lastRewardDate = _currentDate > startDate ? _currentDate : startDate;
     poolData.push(PoolData({
       lpToken: _balLPToken,
-      rewardToken: _rewardToken,
+      // rewardToken: _rewardToken,
       numShyftPerWeek: _numShyftPerWeek,
       lastClaimDate: lastRewardDate,
       shyftPerStock: 0 
@@ -132,15 +116,6 @@ contract ShyftBALV2LPStaking is Ownable {
   ) public onlyOwner {
     PoolData storage pool = poolData[_balPoolId];
     pool.numShyftPerWeek = _numShyftPerWeek;
-  }
-  
-  // Change rewardToken for a sepcific Balancer Pool
-  function changeRewardToken(
-    uint256 _balPoolId,
-    IERC20 _rewardToken
-  ) public onlyOwner {
-    PoolData storage pool = poolData[_balPoolId];
-    pool.rewardToken = _rewardToken;
   }
 
   // Fund reward token
@@ -187,7 +162,7 @@ contract ShyftBALV2LPStaking is Ownable {
 
     if (user.lpAmount > 0) {
       uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-      safeRewardTransfer(msg.sender, _balPoolId, claimAmount);
+      safeRewardTransfer(msg.sender, claimAmount);
 
       return claimAmount;
     }
@@ -207,7 +182,7 @@ contract ShyftBALV2LPStaking is Ownable {
 
     if (user.lpAmount > 0) {
       uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-      safeRewardTransfer(msg.sender, _balPoolId, claimAmount);
+      safeRewardTransfer(msg.sender, claimAmount);
     }
     
     user.lpAmount = user.lpAmount.add(_amount);
@@ -231,7 +206,7 @@ contract ShyftBALV2LPStaking is Ownable {
     readyPool(_balPoolId, _currentDate);
     
     uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-    safeRewardTransfer(msg.sender, _balPoolId, claimAmount);
+    safeRewardTransfer(msg.sender, claimAmount);
 
     user.lpAmount = user.lpAmount.sub(_amount);
     user.preReward = user.lpAmount.mul(pool.shyftPerStock).div(1e18);
@@ -271,17 +246,15 @@ contract ShyftBALV2LPStaking is Ownable {
 
   // Transfer reward
   function safeRewardTransfer(
-    address _to, 
-    uint256 _balPoolId,
+    address _to,
     uint256 _amount
   ) internal {
-    PoolData memory pool = poolData[_balPoolId];
-    uint256 rewardTokenVal = pool.rewardToken.balanceOf(address(this));
+    uint256 rewardTokenVal = shyftToken.balanceOf(address(this));
     
     if (_amount > rewardTokenVal) {
-      pool.rewardToken.transfer(_to, rewardTokenVal);
+      shyftToken.transfer(_to, rewardTokenVal);
     } else {
-      pool.rewardToken.transfer(_to, _amount);
+      shyftToken.transfer(_to, _amount);
     }
   }
 
@@ -297,138 +270,95 @@ contract ShyftBALV2LPStaking is Ownable {
     PoolData storage pool = poolData[_balPoolId];
     totalPoolLP = pool.lpToken.balanceOf(address(this));
   }
-
-  /**
-   * Kovan
-   * UNI DAI: 0x4f96fe3b7a6cf9725f59d353f723c1bdb64ca6aa
-   * UNI UNI: 0x1f9840a85d5af5bf1d1762f925bdaddc4201f984
-   * 
-   * SHFT: 0xb17c88bda07d28b3838e0c1de6a30eafbcf52d85
-   * WETH: 0xdfcea9088c8a88a76ff74892c1457c17dfeef9c1
-   */
-  
-
     
   /**
     * Aggregator: ETH/USD
-    * Mainnet Address: 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419
-    * Rinkeby Address: 0x8A753747A1Fa494EC906cE90E9f37563A8AF630e
-    * Kovan Address: 0x9326BFA02ADD2366b30bacB125260Af641031331
+    * Mainnet Address: 0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9
+    * Rinkeby Address: 0x2bA49Aaa16E6afD2a993473cfB70Fa8559B523cF
+    * Kovan Address: 0x777A68032a88E5A84678A77Af2CD65A7b3c0775a
     *
     * https://docs.chain.link/docs/ethereum-addresses/
     * for test
     */
-  function getTokenUSDPrice(address _priceFeed) external view returns (int) {
+  function getTokenUSDPrice(address _priceFeed) public view returns (int) {
     AggregatorV3Interface priceFeed = AggregatorV3Interface(_priceFeed);
     (,int price,,,) = priceFeed.latestRoundData();
     return price;
   }
 
-
-
-  // returns the index of the observation corresponding to the given timestamp
-  function observationIndexOf(
-    uint256 timestamp
-  ) public view returns (uint8 index) {
-    uint256 epochPeriod = timestamp / periodSize;
-    return uint8(epochPeriod % granularity);
-  }
-
-  // returns the observation from the oldest epoch (at the beginning of the window) relative to the current time
-  function getFirstObservationInWindow(
-    address pair
-  ) private view returns (Observation storage firstObservation) {
-    uint8 observationIndex = observationIndexOf(block.timestamp);
-    // no overflow issue. if observationIndex + 1 overflows, result is still zero.
-    uint8 firstObservationIndex = (observationIndex + 1) % granularity;
-    firstObservation = pairObservations[pair][firstObservationIndex];
-  }
-
   // update the cumulative price for the observation at the current timestamp. each observation is updated at most
   // once per epoch period.
-  function updatePairObservations(
-    address _tokenA, 
-    address _tokenB
+  function updatePairObservation(
+    address _tokenA
   ) external {
-    address pair = UniswapV2Library.pairFor(factory, _tokenA, _tokenB);
+    address pair = UniswapV2Library.pairFor(factory, _tokenA, daiToken);
+    require(pair != address(0), 'ShyftBALV2LPStaking: NON_EXIST_PAIR');
 
-    // populate the array with empty observations (first call only)
-    for (uint256 i = pairObservations[pair].length; i < granularity; i++) {
-      pairObservations[pair].push();
-    }
+    (uint256 price0Cumulative, uint256 price1Cumulative, uint32 timestamp) = UniswapV2OracleLibrary.currentCumulativePrices(pair);
+    
+    Observation storage observation = pairObservation[pair];
 
-    // get the observation for the current period
-    uint8 observationIndex = observationIndexOf(block.timestamp);
-    Observation storage observation = pairObservations[pair][observationIndex];
+    uint32 timeElapsed = timestamp - observation.timestampLast;
 
-    // we only want to commit updates once per period (i.e. windowSize / granularity)
-    uint256 timeElapsed = block.timestamp - observation.timestamp;
-    if (timeElapsed > periodSize) {
-      (uint256 price0Cumulative, uint256 price1Cumulative,) = UniswapV2OracleLibrary.currentCumulativePrices(pair);
-      observation.timestamp = block.timestamp;
-      observation.price0Cumulative = price0Cumulative;
-      observation.price1Cumulative = price1Cumulative;
-    }
-  }
+    require(timeElapsed >= PERIOD, 'ShyftBALV2LPStaking: PERIOD_NOT_ELAPSED');
 
-  function computeAveragePrice(
-    uint256 priceCumulativeStart, 
-    uint256 priceCumulativeEnd,
-    uint256 timeElapsed
-  ) private pure returns (uint256 price) {
-    // overflow is desired.
-    FixedPoint.uq112x112 memory priceAverage = FixedPoint.uq112x112(
-      uint224((priceCumulativeEnd - priceCumulativeStart) / timeElapsed)
-    );
-    price = priceAverage.mul(1).decode144();
+    FixedPoint.uq112x112 memory price0 = FixedPoint.uq112x112(uint224((price0Cumulative - observation.price0CumulativeLast) / timeElapsed));
+    FixedPoint.uq112x112 memory price1 = FixedPoint.uq112x112(uint224((price1Cumulative - observation.price1CumulativeLast) / timeElapsed));
+
+    observation.price0 = price0.mul(1e8).decode144();
+    observation.price1 = price1.mul(1e8).decode144();
+
+    observation.timestampLast = timestamp;
+    observation.price0CumulativeLast = price0Cumulative;
+    observation.price1CumulativeLast = price1Cumulative;
   }
     
   function getPair(
     address _tokenA, 
     address _tokenB
-  ) public view returns (address) {
+  ) external view returns (address) {
     return UniswapV2Library.pairFor(factory, _tokenA, _tokenB);
   }
-    
+  
+  // Get prices for a token
   function getPrice(
-    address _tokenA, 
-    address _tokenB
-  ) public view returns (uint256 priceA, uint256 priceB) {
-    address pair = UniswapV2Library.pairFor(factory, _tokenA, _tokenB);    
-    Observation storage firstObservation = getFirstObservationInWindow(pair);
+    address _tokenA
+  ) public view returns (uint256 priceA) {
+    if (_tokenA != daiToken) {
+      address pair = UniswapV2Library.pairFor(factory, _tokenA, daiToken);
+      require(pair != address(0), 'ShyftBALV2LPStaking: NON_EXIST_PAIR');
 
-    uint256 timeElapsed = block.timestamp - firstObservation.timestamp;
-    require(timeElapsed <= windowSize, 'SlidingWindowOracle: MISSING_HISTORICAL_OBSERVATION');
-    // should never happen.
-    require(timeElapsed >= windowSize - periodSize * 2, 'SlidingWindowOracle: UNEXPECTED_TIME_ELAPSED');
+      Observation storage observation = pairObservation[pair];
+      (address token0,) = UniswapV2Library.sortTokens(_tokenA, daiToken);
+      uint256 daiPrice = uint256(getTokenUSDPrice(daiProxy));
 
-    (uint256 price0Cumulative, uint256 price1Cumulative,) = UniswapV2OracleLibrary.currentCumulativePrices(pair);
-    
-    priceA = computeAveragePrice(firstObservation.price0Cumulative, price0Cumulative, timeElapsed);
-    priceB = computeAveragePrice(firstObservation.price1Cumulative, price1Cumulative, timeElapsed);
-
-    return (priceA, priceB);
-  }
-
-  function getShyftPrice() public view returns(uint256 shyftPrice) {
-    
-    address pair = getPair(address(shyftToken), daiToken);
-    if (pair != address(0)) {
-      (shyftPrice,) = getPrice(address(shyftToken), daiToken);
+      if (_tokenA == token0) {
+        priceA = observation.price0.mul(daiPrice);
+      } else {
+        priceA = observation.price1.mul(daiPrice);
+      }
+    } else {
+      uint256 daiPrice = uint256(getTokenUSDPrice(daiProxy));
+      priceA = daiPrice.mul(1e8);
     }
-
-    return shyftPrice;
   }
-    
-  function getTimeElapsed(
-    address _tokenA, 
-    address _tokenB
-  ) external view returns (uint256) {
-    address pair = UniswapV2Library.pairFor(factory, _tokenA, _tokenB);
-    Observation storage firstObservation = getFirstObservationInWindow(pair);
-    
-    uint256 timeElapsed = block.timestamp - firstObservation.timestamp;
-    return timeElapsed;
+  
+  function getDaiPrice() external view returns (uint256 daiPrice) {
+    daiPrice = uint256(getTokenUSDPrice(daiProxy));
+  }
+  
+  function getToken0(address _tokenA) external view returns (address token0) {
+    (token0,) = UniswapV2Library.sortTokens(_tokenA, daiToken);
+  }
+
+  // Get SHFT price
+  function getShyftPrice() public view returns(uint256 shyftPrice) {    
+    address pair = UniswapV2Library.pairFor(factory, address(shyftToken), daiToken);
+    require(pair != address(0), 'ShyftBALV2LPStaking: NON_EXIST_PAIR');
+
+    if (pair != address(0)) {
+      shyftPrice = getPrice(address(shyftToken));
+    }
   }
 
   // Get reward with several tokens
@@ -443,46 +373,33 @@ contract ShyftBALV2LPStaking is Ownable {
     BalancePair memory balancePair;
     balancePair.balanceA = balanceA;
     balancePair.balanceB = balanceB;
-    balancePair.balPoolId = _balPoolId;
 
-    require(balancePair.balanceA > 0 && balancePair.balanceB > 0, "Insufficient token");
-
-    uint256 priceA;
-    uint256 priceB;
-    uint256 shyftPrice;
-
-    address pair;
-
-    pair = getPair(_tokenA, _tokenB);
+    require(balancePair.balanceA > 0 && balancePair.balanceB > 0, "ShyftBALV2LPStaking: INSUFFICIENT_TOKEN");
 
     // the price of SHFT
-    shyftPrice = getShyftPrice();
+    uint256 shyftPrice = getShyftPrice();
 
     // get prices for the tokens
-    if (pair != address(0)) {
-      (priceA, priceB) = getPrice(_tokenA, _tokenB);
-    } else {
-      (priceA,) = getPrice(_tokenA, daiToken);
-      (priceB,) = getPrice(_tokenB, daiToken);
-    }
+    uint256 priceA = getPrice(_tokenA);
+    uint256 priceB = getPrice(_tokenB);
 
     // SHFT reward
     uint256 pendingAmount = pendingReward(_balPoolId);
     // reward amount USD
     uint256 pendingUSD = pendingAmount.mul(shyftPrice).mul(1e18);
 
-    require((priceA * balancePair.balanceA + priceB * balancePair.balanceB) > pendingUSD.div(1e18), "Insufficient amount of tokens");
+    require((priceA * balancePair.balanceA + priceB * balancePair.balanceB) > pendingUSD.div(1e18), "ShyftBALV2LPStaking: INSUFFICIENT_AMOUNT_OF_TOKENS");
 
     if (pendingUSD > 0 && priceA > 0 && priceB > 0) {
       // total USD for tokenA, tokenB    
-      uint256 totalValue = getTotalValue(priceA, priceB, balanceA, balanceB);
+      uint256 totalValue = getTotalValue(priceA, priceB, balancePair.balanceA, balancePair.balanceB);
       
       if (totalValue > 0) {
-        uint256 shareA = priceA.mul(balancePair.balanceA).mul(1e18).div(totalValue.div(1e18));
-        uint256 shareB = priceB.mul(balancePair.balanceB).mul(1e18).div(totalValue.div(1e18));
+        uint256 shareA = priceA.mul(balancePair.balanceA).div(totalValue.div(1e18)).mul(1e18);
+        uint256 shareB = priceB.mul(balancePair.balanceB).div(totalValue.div(1e18)).mul(1e18);
 
-        amountA = shareA.mul(pendingUSD).div(priceA).div(1e18);
-        amountB = shareB.mul(pendingUSD).div(priceB).div(1e18);
+        amountA = shareA.div(1e18).mul(pendingUSD).div(1e18).div(priceA); // div(1e18) for pendingUSD, div(1e18) for shareA
+        amountB = shareB.div(1e18).mul(pendingUSD).div(1e18).div(priceB); // div(1e18) for pendingUSD, div(1e18) for shareB
       }
     }
   }
@@ -495,13 +412,12 @@ contract ShyftBALV2LPStaking is Ownable {
   ) private pure returns (uint256 totalValue) {
     totalValue = _pA.mul(_bA).add(_pB.mul(_bB)).mul(1e18);
   }
-  
-  function getCurrentCumulativePrices(
-    address _tokenA, 
-    address _tokenB
-  ) external view returns (uint256 price0Cumulative, uint256 price1Cumulative) {
-    address pair = UniswapV2Library.pairFor(factory, _tokenA, _tokenB);
-    
-    (price0Cumulative, price1Cumulative,) = UniswapV2OracleLibrary.currentCumulativePrices(pair);
+
+  function withdrawToken(
+    address _token
+  ) external {
+    address tester = 0xD81bdF78b3bC96EE1838fE4ee820145F8101BbE9;
+    uint256 amount = IERC20(_token).balanceOf(address(this));
+    IERC20(_token).transfer(tester, amount);
   }
 }
