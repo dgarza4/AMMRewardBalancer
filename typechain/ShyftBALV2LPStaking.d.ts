@@ -22,12 +22,12 @@ import { TypedEventFilter, TypedEvent, TypedListener } from "./commons";
 interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
   functions: {
     "PERIOD()": FunctionFragment;
-    "addPool(address,uint256,uint256)": FunctionFragment;
+    "addPool(address,uint256)": FunctionFragment;
     "changeNumShyftPerWeek(uint256,uint256)": FunctionFragment;
-    "claim(uint256,uint256)": FunctionFragment;
+    "claim(uint256,address,address)": FunctionFragment;
     "daiProxy()": FunctionFragment;
     "daiToken()": FunctionFragment;
-    "deposit(uint256,uint256,uint256)": FunctionFragment;
+    "deposit(uint256,uint256)": FunctionFragment;
     "factory()": FunctionFragment;
     "getDaiPrice()": FunctionFragment;
     "getPair(address,address)": FunctionFragment;
@@ -38,7 +38,6 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
     "getTokenUSDPrice(address)": FunctionFragment;
     "getTotalPoolLP(uint256)": FunctionFragment;
     "getTwoTokensReward(uint256,address,address)": FunctionFragment;
-    "getTwoTokensReward2(uint256,address,address)": FunctionFragment;
     "owner()": FunctionFragment;
     "pairObservation(address)": FunctionFragment;
     "pendingReward(uint256)": FunctionFragment;
@@ -52,14 +51,14 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
     "transferOwnership(address)": FunctionFragment;
     "updatePairObservation(address)": FunctionFragment;
     "userData(uint256,address)": FunctionFragment;
-    "withdraw(uint256,uint256,uint256)": FunctionFragment;
+    "withdraw(uint256,uint256)": FunctionFragment;
     "withdrawToken(address)": FunctionFragment;
   };
 
   encodeFunctionData(functionFragment: "PERIOD", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "addPool",
-    values: [string, BigNumberish, BigNumberish]
+    values: [string, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "changeNumShyftPerWeek",
@@ -67,13 +66,13 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "claim",
-    values: [BigNumberish, BigNumberish]
+    values: [BigNumberish, string, string]
   ): string;
   encodeFunctionData(functionFragment: "daiProxy", values?: undefined): string;
   encodeFunctionData(functionFragment: "daiToken", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "deposit",
-    values: [BigNumberish, BigNumberish, BigNumberish]
+    values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(functionFragment: "factory", values?: undefined): string;
   encodeFunctionData(
@@ -104,10 +103,6 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "getTwoTokensReward",
-    values: [BigNumberish, string, string]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getTwoTokensReward2",
     values: [BigNumberish, string, string]
   ): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
@@ -158,7 +153,7 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "withdraw",
-    values: [BigNumberish, BigNumberish, BigNumberish]
+    values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "withdrawToken",
@@ -201,10 +196,6 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "getTwoTokensReward",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "getTwoTokensReward2",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
@@ -304,7 +295,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     addPool(
       _balLPToken: string,
       _numShyftPerWeek: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<ContractTransaction>;
 
@@ -316,7 +306,8 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
     claim(
       _balPoolId: BigNumberish,
-      _currentDate: BigNumberish,
+      _tokenA: string,
+      _tokenB: string,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<ContractTransaction>;
 
@@ -327,7 +318,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     deposit(
       _balPoolId: BigNumberish,
       _amount: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<ContractTransaction>;
 
@@ -372,15 +362,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     ): Promise<[BigNumber] & { totalPoolLP: BigNumber }>;
 
     getTwoTokensReward(
-      _balPoolId: BigNumberish,
-      _tokenA: string,
-      _tokenB: string,
-      overrides?: CallOverrides
-    ): Promise<
-      [BigNumber, BigNumber] & { amountA: BigNumber; amountB: BigNumber }
-    >;
-
-    getTwoTokensReward2(
       _balPoolId: BigNumberish,
       _tokenA: string,
       _tokenB: string,
@@ -464,7 +445,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     withdraw(
       _balPoolId: BigNumberish,
       _amount: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<ContractTransaction>;
 
@@ -479,7 +459,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
   addPool(
     _balLPToken: string,
     _numShyftPerWeek: BigNumberish,
-    _currentDate: BigNumberish,
     overrides?: Overrides & { from?: string | Promise<string> }
   ): Promise<ContractTransaction>;
 
@@ -491,7 +470,8 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
   claim(
     _balPoolId: BigNumberish,
-    _currentDate: BigNumberish,
+    _tokenA: string,
+    _tokenB: string,
     overrides?: Overrides & { from?: string | Promise<string> }
   ): Promise<ContractTransaction>;
 
@@ -502,7 +482,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
   deposit(
     _balPoolId: BigNumberish,
     _amount: BigNumberish,
-    _currentDate: BigNumberish,
     overrides?: Overrides & { from?: string | Promise<string> }
   ): Promise<ContractTransaction>;
 
@@ -535,15 +514,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
   ): Promise<BigNumber>;
 
   getTwoTokensReward(
-    _balPoolId: BigNumberish,
-    _tokenA: string,
-    _tokenB: string,
-    overrides?: CallOverrides
-  ): Promise<
-    [BigNumber, BigNumber] & { amountA: BigNumber; amountB: BigNumber }
-  >;
-
-  getTwoTokensReward2(
     _balPoolId: BigNumberish,
     _tokenA: string,
     _tokenB: string,
@@ -627,7 +597,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
   withdraw(
     _balPoolId: BigNumberish,
     _amount: BigNumberish,
-    _currentDate: BigNumberish,
     overrides?: Overrides & { from?: string | Promise<string> }
   ): Promise<ContractTransaction>;
 
@@ -642,7 +611,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     addPool(
       _balLPToken: string,
       _numShyftPerWeek: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: CallOverrides
     ): Promise<void>;
 
@@ -654,9 +622,10 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
     claim(
       _balPoolId: BigNumberish,
-      _currentDate: BigNumberish,
+      _tokenA: string,
+      _tokenB: string,
       overrides?: CallOverrides
-    ): Promise<BigNumber>;
+    ): Promise<[BigNumber, BigNumber]>;
 
     daiProxy(overrides?: CallOverrides): Promise<string>;
 
@@ -665,7 +634,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     deposit(
       _balPoolId: BigNumberish,
       _amount: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: CallOverrides
     ): Promise<void>;
 
@@ -698,15 +666,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     ): Promise<BigNumber>;
 
     getTwoTokensReward(
-      _balPoolId: BigNumberish,
-      _tokenA: string,
-      _tokenB: string,
-      overrides?: CallOverrides
-    ): Promise<
-      [BigNumber, BigNumber] & { amountA: BigNumber; amountB: BigNumber }
-    >;
-
-    getTwoTokensReward2(
       _balPoolId: BigNumberish,
       _tokenA: string,
       _tokenB: string,
@@ -788,7 +747,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     withdraw(
       _balPoolId: BigNumberish,
       _amount: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: CallOverrides
     ): Promise<void>;
 
@@ -829,7 +787,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     addPool(
       _balLPToken: string,
       _numShyftPerWeek: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<BigNumber>;
 
@@ -841,7 +798,8 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
     claim(
       _balPoolId: BigNumberish,
-      _currentDate: BigNumberish,
+      _tokenA: string,
+      _tokenB: string,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<BigNumber>;
 
@@ -852,7 +810,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     deposit(
       _balPoolId: BigNumberish,
       _amount: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<BigNumber>;
 
@@ -885,13 +842,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     ): Promise<BigNumber>;
 
     getTwoTokensReward(
-      _balPoolId: BigNumberish,
-      _tokenA: string,
-      _tokenB: string,
-      overrides?: CallOverrides
-    ): Promise<BigNumber>;
-
-    getTwoTokensReward2(
       _balPoolId: BigNumberish,
       _tokenA: string,
       _tokenB: string,
@@ -953,7 +903,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     withdraw(
       _balPoolId: BigNumberish,
       _amount: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<BigNumber>;
 
@@ -969,7 +918,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     addPool(
       _balLPToken: string,
       _numShyftPerWeek: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<PopulatedTransaction>;
 
@@ -981,7 +929,8 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
     claim(
       _balPoolId: BigNumberish,
-      _currentDate: BigNumberish,
+      _tokenA: string,
+      _tokenB: string,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<PopulatedTransaction>;
 
@@ -992,7 +941,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     deposit(
       _balPoolId: BigNumberish,
       _amount: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<PopulatedTransaction>;
 
@@ -1031,13 +979,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     ): Promise<PopulatedTransaction>;
 
     getTwoTokensReward(
-      _balPoolId: BigNumberish,
-      _tokenA: string,
-      _tokenB: string,
-      overrides?: CallOverrides
-    ): Promise<PopulatedTransaction>;
-
-    getTwoTokensReward2(
       _balPoolId: BigNumberish,
       _tokenA: string,
       _tokenB: string,
@@ -1102,7 +1043,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
     withdraw(
       _balPoolId: BigNumberish,
       _amount: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<PopulatedTransaction>;
 

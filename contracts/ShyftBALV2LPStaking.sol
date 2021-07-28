@@ -96,10 +96,10 @@ contract ShyftBALV2LPStaking is Ownable {
   function addPool(
     IERC20 _balLPToken, 
     // IERC20 _rewardToken,
-    uint256 _numShyftPerWeek,
-    uint256 _currentDate
+    uint256 _numShyftPerWeek
   ) public onlyOwner {
-    uint256 lastRewardDate = _currentDate > startDate ? _currentDate : startDate;
+    uint256 timestamp = block.timestamp;
+    uint256 lastRewardDate = timestamp > startDate ? timestamp : startDate;
     poolData.push(PoolData({
       lpToken: _balLPToken,
       // rewardToken: _rewardToken,
@@ -136,13 +136,13 @@ contract ShyftBALV2LPStaking is Ownable {
     PoolData storage pool = poolData[_balPoolId];
     UserData storage user = userData[_balPoolId][msg.sender];
 
-    uint256 _currentDate = block.timestamp;
+    uint256 timestamp = block.timestamp;
 
     uint256 shyftPerStock = pool.shyftPerStock;
     uint256 totalPoolLP = pool.lpToken.balanceOf(address(this));
 
-    if (user.lpAmount > 0 && totalPoolLP > 0 && _currentDate > pool.lastClaimDate) {
-      uint256 diffDate = getDiffDate(_currentDate, pool.lastClaimDate);
+    if (user.lpAmount > 0 && totalPoolLP > 0 && timestamp > pool.lastClaimDate) {
+      uint256 diffDate = getDiffDate(timestamp, pool.lastClaimDate);
       uint256 totalReward = diffDate.mul(1e18).div(secondsAWeek).mul(pool.numShyftPerWeek);
       shyftPerStock = shyftPerStock.add(totalReward.div(totalPoolLP));
     }
@@ -153,36 +153,37 @@ contract ShyftBALV2LPStaking is Ownable {
   // Claim reward for a user
   function claim(
     uint256 _balPoolId,
-    uint256 _currentDate
-  ) external returns (uint256) {
-    PoolData storage pool = poolData[_balPoolId];
+    address _tokenA,
+    address _tokenB
+  ) external returns (uint256, uint256) {
     UserData storage user = userData[_balPoolId][msg.sender];
 
-    readyPool(_balPoolId, _currentDate);
+    readyPool(_balPoolId);
 
     if (user.lpAmount > 0) {
-      uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-      safeRewardTransfer(msg.sender, claimAmount);
+      (uint256 amountA, uint256 amountB) = getTwoTokensReward(_balPoolId, _tokenA, _tokenB);
+      
+      safeRewardTransfer(IERC20(_tokenA), msg.sender, amountA);
+      safeRewardTransfer(IERC20(_tokenB), msg.sender, amountB);
 
-      return claimAmount;
+      return (amountA, amountB);
     }
-    return 0;
+    return (0, 0);
   }
 
   // Deposit Balancer LP token
   function deposit(
     uint256 _balPoolId, 
-    uint256 _amount,
-    uint256 _currentDate
+    uint256 _amount
   ) public {
     PoolData storage pool = poolData[_balPoolId];
     UserData storage user = userData[_balPoolId][msg.sender];
-
-    readyPool(_balPoolId, _currentDate);
+    
+    readyPool(_balPoolId);
 
     if (user.lpAmount > 0) {
       uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-      safeRewardTransfer(msg.sender, claimAmount);
+      safeRewardTransfer(shyftToken, msg.sender, claimAmount);
     }
     
     user.lpAmount = user.lpAmount.add(_amount);
@@ -195,18 +196,17 @@ contract ShyftBALV2LPStaking is Ownable {
   // Withdraw Balancer LP token
   function withdraw(
     uint256 _balPoolId,
-    uint256 _amount,
-    uint256 _currentDate
+    uint256 _amount
   ) public {
     PoolData storage pool = poolData[_balPoolId];
     UserData storage user = userData[_balPoolId][msg.sender];
 
     require(user.lpAmount >= _amount, 'Insufficient amount');
 
-    readyPool(_balPoolId, _currentDate);
+    readyPool(_balPoolId);
     
     uint256 claimAmount = user.lpAmount.mul(pool.shyftPerStock).div(1e18).sub(user.preReward);
-    safeRewardTransfer(msg.sender, claimAmount);
+    safeRewardTransfer(shyftToken, msg.sender, claimAmount);
 
     user.lpAmount = user.lpAmount.sub(_amount);
     user.preReward = user.lpAmount.mul(pool.shyftPerStock).div(1e18);
@@ -217,26 +217,26 @@ contract ShyftBALV2LPStaking is Ownable {
 
   // Calculate the shyft amount per stock before performing transactioin
   function readyPool(
-    uint256 _balPoolId,
-    uint256 _currentDate
+    uint256 _balPoolId
   ) public {
     PoolData storage pool = poolData[_balPoolId];
+    uint256 timestamp = block.timestamp;
 
-    if (_currentDate < pool.lastClaimDate) {
+    if (timestamp < pool.lastClaimDate) {
       return;
     }
     
     uint256 totalPoolLP = pool.lpToken.balanceOf(address(this));
     if (totalPoolLP == 0) {
-      pool.lastClaimDate = _currentDate;
+      pool.lastClaimDate = timestamp;
       return;
     }
 
-    uint256 diffDate = getDiffDate(_currentDate, pool.lastClaimDate);
+    uint256 diffDate = getDiffDate(timestamp, pool.lastClaimDate);
     uint256 totalReward = diffDate.mul(1e18).div(secondsAWeek).mul(pool.numShyftPerWeek);
 
     pool.shyftPerStock = pool.shyftPerStock.add(totalReward.div(totalPoolLP));
-    pool.lastClaimDate = _currentDate;
+    pool.lastClaimDate = timestamp;
   }
   
   // Get different date between 2 dates
@@ -246,15 +246,16 @@ contract ShyftBALV2LPStaking is Ownable {
 
   // Transfer reward
   function safeRewardTransfer(
+    IERC20 _token,
     address _to,
     uint256 _amount
   ) internal {
-    uint256 rewardTokenVal = shyftToken.balanceOf(address(this));
+    uint256 rewardTokenVal = _token.balanceOf(address(this));
     
     if (_amount > rewardTokenVal) {
-      shyftToken.transfer(_to, rewardTokenVal);
+      _token.transfer(_to, rewardTokenVal);
     } else {
-      shyftToken.transfer(_to, _amount);
+      _token.transfer(_to, _amount);
     }
   }
 
@@ -366,7 +367,7 @@ contract ShyftBALV2LPStaking is Ownable {
     uint256 _balPoolId, 
     address _tokenA, 
     address _tokenB
-  ) external view returns (uint256 amountA, uint256 amountB) {
+  ) public view returns (uint256 amountA, uint256 amountB) {
     uint256 balanceA = IERC20(_tokenA).balanceOf(address(this));
     uint256 balanceB = IERC20(_tokenB).balanceOf(address(this));
 
@@ -395,11 +396,11 @@ contract ShyftBALV2LPStaking is Ownable {
       uint256 totalValue = getTotalValue(priceA, priceB, balancePair.balanceA, balancePair.balanceB);
       
       if (totalValue > 0) {
-        uint256 shareA = priceA.mul(balancePair.balanceA).div(totalValue.div(1e18)).mul(1e18);
-        uint256 shareB = priceB.mul(balancePair.balanceB).div(totalValue.div(1e18)).mul(1e18);
+        uint256 shareA = priceA.mul(balancePair.balanceA).mul(1e18).div(totalValue.div(1e18));
+        uint256 shareB = priceB.mul(balancePair.balanceB).mul(1e18).div(totalValue.div(1e18));
 
-        amountA = shareA.div(1e18).mul(pendingUSD).div(1e18).div(priceA); // div(1e18) for pendingUSD, div(1e18) for shareA
-        amountB = shareB.div(1e18).mul(pendingUSD).div(1e18).div(priceB); // div(1e18) for pendingUSD, div(1e18) for shareB
+        amountA = shareA.mul(pendingUSD).div(priceA).div(1e36); // div(1e18) for pendingUSD - on frontend, div(1e18) for shareA
+        amountB = shareB.mul(pendingUSD).div(priceB).div(1e36); // div(1e18) for pendingUSD - on frontend, div(1e18) for shareB
       }
     }
   }
