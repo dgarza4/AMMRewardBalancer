@@ -32,4 +32,4 @@ Solidity - 0.8.0 (solc-js)
 
 ### Tokens' amount calculation algorithm
 
-![algorithm] (https://drive.google.com/uc?export=view&id=1AgaQhpEikfP2Y4MIIJpiUkTcsXoGgRwO)
+![Multiple tokens reward calculation 3](https://user-images.githubusercontent.com/49337840/128024118-8bd3ca02-ad94-48f7-ab6b-b4bb4c824367.png)
