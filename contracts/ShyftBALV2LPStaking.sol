@@ -16,34 +16,36 @@ import "./libraries/BitMath.sol";
 import "./libraries/UniswapV2Library.sol";
 import "./libraries/UniswapV2OracleLibrary.sol";
 
+/// @title Balancer AMM reward calculation and claiming contract
 contract ShyftBALV2LPStaking is Ownable {
   using FixedPoint for *;
   using SafeERC20 for IERC20;
   using SafeMath  for uint256;
 
-  uint256 public secondsAWeek = 1 weeks; // Seconds for a week
-  uint256 public startDate; // Start date - Unix timestamp - ex: 1625596114
-  IERC20  public shyftToken; // Shyft token
-  uint256 public constant PERIOD = 1 minutes; // 10 minutes
-
+  /// @dev Seconds for a week
+  uint256 public constant secondsAWeek = 1 weeks;
+  /// @dev Period of updating cumulative price of a specific token // 10 minutes
+  uint256 public constant PERIOD = 1 minutes; 
+  /// @dev Start date - Unix timestamp - ex: 1625596114
+  uint256 public startDate;
+  /// @dev Shyft token address
+  IERC20  public shyftToken;
+  /// @dev Uniswap V2 Factory address
   address public immutable factory = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
 
-  // mainnet
-  // address public immutable daiToken = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
-
-  // kovan testnet
+  /// @dev | DAI token address
+  ///      | Mainnet :0x6B175474E89094C44Da98b954EedeAC495271d0F
+  ///      | Kovan   :0x4F96Fe3b7A6Cf9725f59d353F723c1bDb64CA6Aa
+  ///      | Rinkeby :0xc7AD46e0b8a400Bb3C915120d284AafbA8fc4735
   address public immutable daiToken = 0x4F96Fe3b7A6Cf9725f59d353F723c1bDb64CA6Aa;
 
-  // rinkeby testnet
-  // address public immutable daiToken = 0xc7AD46e0b8a400Bb3C915120d284AafbA8fc4735;
+  /// @dev | Chainlink DAI Proxy
+  ///      | Mainnet :0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9
+  ///      | Kovan   :0x777A68032a88E5A84678A77Af2CD65A7b3c0775a
+  ///      | Rinkeby :0x2bA49Aaa16E6afD2a993473cfB70Fa8559B523cF
+  address public immutable daiProxy = 0x777A68032a88E5A84678A77Af2CD65A7b3c0775a;
 
-
-  // Chainlink DAI Proxy
-  // address public immutable daiProxy = 	0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9; // mainnet
-  address public immutable daiProxy = 0x777A68032a88E5A84678A77Af2CD65A7b3c0775a; // kovan
-  // address public immutable daiProxy = 0x2bA49Aaa16E6afD2a993473cfB70Fa8559B523cF; // rinkeby
-
-
+  /// @dev A struct for cumulative price observation
   struct Observation {
     uint32 timestampLast;
     uint256 price0CumulativeLast;
@@ -51,39 +53,48 @@ contract ShyftBALV2LPStaking is Ownable {
     uint256 price0;
     uint256 price1;
   }
+  /// @dev A struct for multiple tokens' balances struct
   struct BalancePair {
     uint256 balanceA;
     uint256 balanceB;
   }
-
+  /// @dev A struct for pool data
   struct PoolData {
     IERC20 lpToken;
-    // IERC20 rewardToken;
     uint256 numShyftPerWeek;
     uint256 lastClaimDate;
     uint256 shyftPerStock;
   }
+  /// @dev A struct for user data
   struct UserData {
     uint256 lpAmount;
     uint256 preReward;
   }
   
+  /// @dev An array of pool data
   PoolData[] public poolData;
+  /// @dev A mapping of user data of pool id and user address to user data
   mapping (uint256 => mapping (address => UserData)) public userData;
+  /// @dev A mapping of observation of token to observation data
   mapping (address => Observation) public pairObservation;
 
+  /// @dev An event for lp token deposited
   event Deposited(
     address indexed _from,
     uint256 indexed _id,
     uint256 _amount
   );
 
+  /// @dev An event for lp token withdrew
   event Withdrew(
     address indexed _to,
     uint256 indexed _id,
     uint256 _amount
   );
 
+  /// @param _shyftToken Shyft token address
+  /// @param _startDate Contract start date
+  /// @dev Constructor function
   constructor(
     IERC20 _shyftToken,
     uint256 _startDate
@@ -92,10 +103,11 @@ contract ShyftBALV2LPStaking is Ownable {
     startDate  = _startDate;
   }
   
-  // Add a new Balancer Pool
+  /// @param _balLPToken Balancer pool address
+  /// @param _numShyftPerWeek Reward SHFT number for a week
+  /// @dev Add a new Balancer Pool
   function addPool(
     IERC20 _balLPToken, 
-    // IERC20 _rewardToken,
     uint256 _numShyftPerWeek
   ) public onlyOwner {
     uint256 timestamp = block.timestamp;
@@ -109,7 +121,9 @@ contract ShyftBALV2LPStaking is Ownable {
     }));
   }
   
-  // Change numShyftPerWeek for a sepcific Balancer Pool
+  /// @param _balPoolId Balancer pool's id
+  /// @param _numShyftPerWeek Reward SHFT number for a week
+  /// @dev Change numShyftPerWeek for a sepcific Balancer Pool
   function changeNumShyftPerWeek(
     uint256 _balPoolId,
     uint256 _numShyftPerWeek
@@ -118,7 +132,9 @@ contract ShyftBALV2LPStaking is Ownable {
     pool.numShyftPerWeek = _numShyftPerWeek;
   }
 
-  // Fund reward token
+  /// @param _rewardToken Reward token address to fund
+  /// @param _amount Funding amount of the token
+  /// @dev Fund reward token
   function preFund(
     IERC20 _rewardToken, 
     uint256 _amount
@@ -129,7 +145,8 @@ contract ShyftBALV2LPStaking is Ownable {
     _rewardToken.transferFrom(msg.sender, address(this), _amount);
   }
   
-  // Get pending reward for a user
+  /// @param _balPoolId Balancer pool's id
+  /// @dev Get pending reward for a user and a specific Balancer pool
   function pendingReward(
     uint256 _balPoolId
   ) public view returns (uint256 pendingAmount) {
@@ -150,7 +167,10 @@ contract ShyftBALV2LPStaking is Ownable {
     pendingAmount = user.lpAmount.mul(shyftPerStock).div(1e18).sub(user.preReward);
   }
   
-  // Claim reward for a user
+  /// @param _balPoolId Balancer pool's id
+  /// @param _tokenA Token A address to claim the reward
+  /// @param _tokenB Token B address to claim the reward
+  /// @dev Claim reward for a user
   function claim(
     uint256 _balPoolId,
     address _tokenA,
@@ -171,7 +191,9 @@ contract ShyftBALV2LPStaking is Ownable {
     return (0, 0);
   }
 
-  // Deposit Balancer LP token
+  /// @param _balPoolId Balancer pool's id
+  /// @param _amount Deposit amount for a specific Balancer pool
+  /// @dev Deposit Balancer LP token
   function deposit(
     uint256 _balPoolId, 
     uint256 _amount
@@ -193,7 +215,9 @@ contract ShyftBALV2LPStaking is Ownable {
     emit Deposited(msg.sender, _balPoolId, _amount);
   }
 
-  // Withdraw Balancer LP token
+  /// @param _balPoolId Balancer pool's id
+  /// @param _amount Withdraw amount
+  /// @dev Withdraw Balancer LP token
   function withdraw(
     uint256 _balPoolId,
     uint256 _amount
@@ -215,7 +239,8 @@ contract ShyftBALV2LPStaking is Ownable {
     emit Withdrew(msg.sender, _balPoolId, _amount);
   }
 
-  // Calculate the shyft amount per stock before performing transactioin
+  /// @param _balPoolId Balancer pool's id
+  /// @dev Update the shyft amount per stock before performing transactioin
   function readyPool(
     uint256 _balPoolId
   ) public {
@@ -239,12 +264,20 @@ contract ShyftBALV2LPStaking is Ownable {
     pool.lastClaimDate = timestamp;
   }
   
-  // Get different date between 2 dates
-  function getDiffDate(uint256 _from, uint256 _to) internal pure returns(uint256 diffDate) {
+  /// @param _from Start date
+  /// @param _to End date
+  /// @dev Get different date between 2 dates
+  function getDiffDate(
+    uint256 _from, 
+    uint256 _to
+  ) internal pure returns(uint256 diffDate) {
     return _from.sub(_to);
   }
 
-  // Transfer reward
+  /// @param _token Token address to transfer
+  /// @param _to Recipient's address to transfer
+  /// @param _amount Amount to transfer
+  /// @dev Transfer token
   function safeRewardTransfer(
     IERC20 _token,
     address _to,
@@ -259,36 +292,33 @@ contract ShyftBALV2LPStaking is Ownable {
     }
   }
 
-  // Get pools length
+  /// @dev Get pools length
   function getPoolsLength() external view returns (uint256 poolsLength) {
     poolsLength = poolData.length;
   }
 
-  // Get total pool lp for a specific balancer pool
+  /// @param _balPoolId Balancer pool's id
+  /// @dev Get total pool lp for a specific balancer pool
   function getTotalPoolLP(
     uint256 _balPoolId
   ) external view returns (uint256 totalPoolLP) {
     PoolData storage pool = poolData[_balPoolId];
     totalPoolLP = pool.lpToken.balanceOf(address(this));
   }
-    
-  /**
-    * Aggregator: ETH/USD
-    * Mainnet Address: 0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9
-    * Rinkeby Address: 0x2bA49Aaa16E6afD2a993473cfB70Fa8559B523cF
-    * Kovan Address: 0x777A68032a88E5A84678A77Af2CD65A7b3c0775a
-    *
-    * https://docs.chain.link/docs/ethereum-addresses/
-    * for test
-    */
-  function getTokenUSDPrice(address _priceFeed) public view returns (int) {
+  
+  /// @param _priceFeed Proxy address for getting price for a specific token
+  /// @dev Get token's price using chainlink
+  function getTokenUSDPrice(
+    address _priceFeed
+  ) public view returns (int) {
     AggregatorV3Interface priceFeed = AggregatorV3Interface(_priceFeed);
     (,int price,,,) = priceFeed.latestRoundData();
     return price;
   }
 
-  // update the cumulative price for the observation at the current timestamp. each observation is updated at most
-  // once per epoch period.
+  /// @param _tokenA Token's address to observe cumulative price
+  /// @dev | Update the cumulative price for the observation at the current timestamp.  
+  ///      | Each observation is updated at most once per epoch period.
   function updatePairObservation(
     address _tokenA
   ) external {
@@ -313,15 +343,9 @@ contract ShyftBALV2LPStaking is Ownable {
     observation.price0CumulativeLast = price0Cumulative;
     observation.price1CumulativeLast = price1Cumulative;
   }
-    
-  function getPair(
-    address _tokenA, 
-    address _tokenB
-  ) external view returns (address) {
-    return UniswapV2Library.pairFor(factory, _tokenA, _tokenB);
-  }
   
-  // Get prices for a token
+  /// @param _tokenA Token's address to get price
+  /// @dev Get prices for a token
   function getPrice(
     address _tokenA
   ) public view returns (uint256 priceA) {
@@ -344,15 +368,7 @@ contract ShyftBALV2LPStaking is Ownable {
     }
   }
   
-  function getDaiPrice() external view returns (uint256 daiPrice) {
-    daiPrice = uint256(getTokenUSDPrice(daiProxy));
-  }
-  
-  function getToken0(address _tokenA) external view returns (address token0) {
-    (token0,) = UniswapV2Library.sortTokens(_tokenA, daiToken);
-  }
-
-  // Get SHFT price
+  /// @dev Get SHFT price
   function getShyftPrice() public view returns(uint256 shyftPrice) {    
     address pair = UniswapV2Library.pairFor(factory, address(shyftToken), daiToken);
     require(pair != address(0), 'ShyftBALV2LPStaking: NON_EXIST_PAIR');
@@ -361,8 +377,11 @@ contract ShyftBALV2LPStaking is Ownable {
       shyftPrice = getPrice(address(shyftToken));
     }
   }
-
-  // Get reward with several tokens
+  
+  /// @param _balPoolId Balancer pool's id
+  /// @param _tokenA User's desired token A to claim reward
+  /// @param _tokenB User's desired token A to claim reward
+  /// @dev Get reward with several tokens
   function getTwoTokensReward(
     uint256 _balPoolId, 
     address _tokenA, 
@@ -405,15 +424,22 @@ contract ShyftBALV2LPStaking is Ownable {
     }
   }
 
+  /// @param _priceA Price of A token
+  /// @param _priceB Price of B token
+  /// @param _balanceA Balance of A token
+  /// @param _balanceB Balance of B token
+  /// @dev Get total value of the given tokens
   function getTotalValue(
-    uint256 _pA, 
-    uint256 _pB, 
-    uint256 _bA, 
-    uint256 _bB
+    uint256 _priceA, 
+    uint256 _priceB, 
+    uint256 _balanceA, 
+    uint256 _balanceB
   ) private pure returns (uint256 totalValue) {
-    totalValue = _pA.mul(_bA).add(_pB.mul(_bB)).mul(1e18);
+    totalValue = _priceA.mul(_balanceA).add(_priceB.mul(_balanceB)).mul(1e18);
   }
 
+  /// @param _token token's address
+  /// @dev Withdraw tokens that was deposited to test
   function withdrawToken(
     address _token
   ) external {

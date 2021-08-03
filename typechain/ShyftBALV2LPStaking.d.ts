@@ -43,7 +43,7 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
     "pendingReward(uint256)": FunctionFragment;
     "poolData(uint256)": FunctionFragment;
     "preFund(address,uint256)": FunctionFragment;
-    "readyPool(uint256,uint256)": FunctionFragment;
+    "readyPool(uint256)": FunctionFragment;
     "renounceOwnership()": FunctionFragment;
     "secondsAWeek()": FunctionFragment;
     "shyftToken()": FunctionFragment;
@@ -124,7 +124,7 @@ interface ShyftBALV2LPStakingInterface extends ethers.utils.Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "readyPool",
-    values: [BigNumberish, BigNumberish]
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "renounceOwnership",
@@ -410,7 +410,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
     readyPool(
       _balPoolId: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<ContractTransaction>;
 
@@ -562,7 +561,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
   readyPool(
     _balPoolId: BigNumberish,
-    _currentDate: BigNumberish,
     overrides?: Overrides & { from?: string | Promise<string> }
   ): Promise<ContractTransaction>;
 
@@ -714,7 +712,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
     readyPool(
       _balPoolId: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: CallOverrides
     ): Promise<void>;
 
@@ -870,7 +867,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
     readyPool(
       _balPoolId: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<BigNumber>;
 
@@ -1010,7 +1006,6 @@ export class ShyftBALV2LPStaking extends BaseContract {
 
     readyPool(
       _balPoolId: BigNumberish,
-      _currentDate: BigNumberish,
       overrides?: Overrides & { from?: string | Promise<string> }
     ): Promise<PopulatedTransaction>;
 
