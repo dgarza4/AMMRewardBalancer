@@ -1,41 +1,59 @@
-// SPDX-License-Identifier: MIT
-
+//SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "../interfaces/IERC20Minimal.sol";
 
-// mock class using ERC20
-contract ERC20Mock is ERC20 {
-  constructor(
-    string memory name,
-    string memory symbol,
-    address initialAccount,
-    uint256 initialBalance
-  ) payable ERC20(name, symbol) {
-    _mint(initialAccount, initialBalance);
+contract ERC20Mock is IERC20Minimal {
+  mapping(address => uint256) public override balanceOf;
+  mapping(address => mapping(address => uint256)) public override allowance;
+
+  constructor(uint256 amountToMint) {
+    mint(msg.sender, amountToMint);
   }
 
-  function mint(address account, uint256 amount) public {
-    _mint(account, amount);
+  function mint(address to, uint256 amount) public {
+    uint256 balanceNext = balanceOf[to] + amount;
+    require(balanceNext >= amount, 'overflow balance');
+    balanceOf[to] = balanceNext;
   }
 
-  function burn(address account, uint256 amount) public {
-    _burn(account, amount);
+  function transfer(address recipient, uint256 amount) external override returns (bool) {
+    uint256 balanceBefore = balanceOf[msg.sender];
+    require(balanceBefore >= amount, 'insufficient balance');
+    balanceOf[msg.sender] = balanceBefore - amount;
+
+    uint256 balanceRecipient = balanceOf[recipient];
+    require(balanceRecipient + amount >= balanceRecipient, 'recipient balance overflow');
+    balanceOf[recipient] = balanceRecipient + amount;
+
+    emit Transfer(msg.sender, recipient, amount);
+    return true;
   }
 
-  function transferInternal(
-    address from,
-    address to,
-    uint256 value
-  ) public {
-    _transfer(from, to, value);
+  function approve(address spender, uint256 amount) external override returns (bool) {
+    allowance[msg.sender][spender] = amount;
+    emit Approval(msg.sender, spender, amount);
+    return true;
   }
 
-  function approveInternal(
-    address owner,
-    address spender,
-    uint256 value
-  ) public {
-    _approve(owner, spender, value);
+  function transferFrom(
+    address sender,
+    address recipient,
+    uint256 amount
+  ) external override returns (bool) {
+    uint256 allowanceBefore = allowance[sender][msg.sender];
+    require(allowanceBefore >= amount, 'allowance insufficient');
+
+    allowance[sender][msg.sender] = allowanceBefore - amount;
+
+    uint256 balanceRecipient = balanceOf[recipient];
+    require(balanceRecipient + amount >= balanceRecipient, 'overflow balance recipient');
+    balanceOf[recipient] = balanceRecipient + amount;
+    uint256 balanceSender = balanceOf[sender];
+    require(balanceSender >= amount, 'underflow balance sender');
+    balanceOf[sender] = balanceSender - amount;
+
+    emit Transfer(sender, recipient, amount);
+    return true;
   }
 }

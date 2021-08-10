@@ -1,8 +1,16 @@
-require("@nomiclabs/hardhat-waffle");
-require("@nomiclabs/hardhat-etherscan");
-require("@nomiclabs/hardhat-ethers");
-require('@typechain/hardhat')
-require("dotenv").config();
+// require("@nomiclabs/hardhat-waffle");
+// require("@nomiclabs/hardhat-etherscan");
+// require("@nomiclabs/hardhat-ethers");
+// require('@typechain/hardhat')
+// require("dotenv").config();
+
+import "@nomiclabs/hardhat-waffle";
+import "@nomiclabs/hardhat-etherscan";
+import "@nomiclabs/hardhat-ethers";
+import "@typechain/hardhat";
+import { resolve } from "path";
+import { config as dotenvConfig } from "dotenv";
+dotenvConfig({ path: resolve(__dirname, "./.env") });
 
 module.exports = {
   networks: {
@@ -18,6 +26,10 @@ module.exports = {
         },
         evmVersion: "byzantium",
       },
+      forking: {
+        url: `https://eth-mainnet.alchemyapi.io/v2/${process.env.ALCHEMY_API_KEY}`,
+        // blockNumber: 9109500
+      }
     },
     mainnet: {
       url: `https://eth-mainnet.alchemyapi.io/v2/${process.env.ALCHEMY_API_KEY}`,
