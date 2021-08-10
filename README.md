@@ -40,7 +40,7 @@ npx hardhat test
 
 ## Metamask read/write:
 
-https://kovan.etherscan.io/address/0xb9676b7d2b44EC23c6a058727b6335815ab91FC3#code
+https://kovan.etherscan.io/address/0x8fE8FE4233bF3F5F2433E58a669A5FEDB979C84B#code
 
 ## Base token to calculate the price of a token
 

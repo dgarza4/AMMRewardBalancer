@@ -196,15 +196,15 @@ contract ShyftBALV2LPStaking is Ownable {
     readyPool(_balPoolId);
 
     if (user.lpAmount > 0) {
-      // store current claiming amount as preReward to subtract later
-      uint256 pendingAmount = pendingReward(_balPoolId);
-      uint256 preReward = user.preReward;
-      user.preReward = preReward.add(pendingAmount);
-
       (uint256 amountA, uint256 amountB) = getTwoTokensReward(_balPoolId, _tokenA, _tokenB);
       
       safeRewardTransfer(IERC20(_tokenA), msg.sender, amountA);
       safeRewardTransfer(IERC20(_tokenB), msg.sender, amountB);
+
+      // store current claiming amount as preReward to subtract later
+      uint256 pendingAmount = pendingReward(_balPoolId);
+      uint256 preReward = user.preReward;
+      user.preReward = preReward.add(pendingAmount);
 
       return (amountA, amountB);
     }
